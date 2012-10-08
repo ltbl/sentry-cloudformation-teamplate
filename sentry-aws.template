@@ -1,0 +1,298 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+  
+  "Description" : "AWS CloudFormation Sample Template Sentry",
+  
+  "Parameters" : {
+      
+    "KeyName" : {
+      "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+      "Type" : "String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern" : "[-_ a-zA-Z0-9]*",
+      "ConstraintDescription" : "can contain only alphanumeric characters, spaces, dashes and underscores."
+    },    
+
+    "SentryKey" : {
+      "Description" : "a unique randomly generated secret key for your server, and it acts as a signing token",
+      "Type" : "String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+
+    "SentryEmail" : {
+      "Description" : "Sentry email",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "64"
+    },
+
+    "SentryUserName" : {
+      "Default": "sentry",
+      "Description" : "Sentry superuser name",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+    },
+
+    "SentryPassword" : {
+      "NoEcho": "true",
+      "Description" : "Sentry superuser password",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "64"
+    },
+    
+
+    "DBName": {
+      "Default": "sentry",
+      "Description" : "Sentry database name",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "64",
+      "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+    },
+
+    "DBUsername": {
+      "Default": "sentry",
+      "Description" : "Username for PostgreSQL database access",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "16",
+      "AllowedPattern" : "[a-zA-Z][a-zA-Z0-9]*",
+      "ConstraintDescription" : "must begin with a letter and contain only alphanumeric characters."
+    },
+
+    "DBPassword": {
+      "NoEcho": "true",
+      "Description" : "Password PostgreSQL database access",
+      "Type": "String",
+      "MinLength": "1",
+      "MaxLength": "41",
+      "AllowedPattern" : "[a-zA-Z0-9]*",
+      "ConstraintDescription" : "must contain only alphanumeric characters."
+    },
+
+    "InstanceType" : {
+      "Description" : "WebServer EC2 instance type",
+      "Type" : "String",
+      "Default" : "t1.micro",
+      "AllowedValues" : [ "t1.micro","m1.small","m1.medium","m1.large","m1.xlarge","m2.xlarge","m2.2xlarge","m2.4xlarge","c1.medium","c1.xlarge","cc1.4xlarge","cc2.8xlarge","cg1.4xlarge"],
+      "ConstraintDescription" : "must be a valid EC2 instance type."
+    }
+  },
+  
+  "Mappings" : {
+    "AWSInstanceType2Arch" : {
+      "t1.micro"    : { "Arch" : "64" },
+      "m1.small"    : { "Arch" : "64" },
+      "m1.medium"   : { "Arch" : "64" },
+      "m1.large"    : { "Arch" : "64" },
+      "m1.xlarge"   : { "Arch" : "64" },
+      "m2.xlarge"   : { "Arch" : "64" },
+      "m2.2xlarge"  : { "Arch" : "64" },
+      "m2.4xlarge"  : { "Arch" : "64" },
+      "c1.medium"   : { "Arch" : "64" },
+      "c1.xlarge"   : { "Arch" : "64" },
+      "cc1.4xlarge" : { "Arch" : "64HVM" },
+      "cc2.8xlarge" : { "Arch" : "64HVM" },
+      "cg1.4xlarge" : { "Arch" : "64HVM" }
+  },
+  "AWSRegionArch2AMI" : {
+    "us-east-1"      : { "32" : "ami-ac9943c5", "64" : "ami-a29943cb", "64HVM" : "ami-0da96764" },
+    "us-west-2"      : { "32" : "ami-3e800c0e", "64" : "ami-20800c10", "64HVM" : "NOT_YET_SUPPORTED" },
+    "us-west-1"      : { "32" : "ami-85712ac0", "64" : "ami-87712ac2", "64HVM" : "NOT_YET_SUPPORTED" },
+    "eu-west-1"      : { "32" : "ami-e7e8d393", "64" : "ami-e1e8d395", "64HVM" : "NOT_YET_SUPPORTED" },
+    "ap-southeast-1" : { "32" : "ami-a6ca8df4", "64" : "ami-a4ca8df6", "64HVM" : "NOT_YET_SUPPORTED" },
+    "ap-northeast-1" : { "32" : "ami-5ec7775f", "64" : "ami-60c77761", "64HVM" : "NOT_YET_SUPPORTED" },
+    "sa-east-1"      : { "32" : "ami-92d8068f", "64" : "ami-8cd80691", "64HVM" : "NOT_YET_SUPPORTED" }
+    }
+  },
+    
+  "Resources" : {     
+      
+    "CfnUser" : {
+      "Type" : "AWS::IAM::User",
+      "Properties" : {
+        "Path": "/",
+        "Policies": [{
+          "PolicyName": "root",
+          "PolicyDocument": { "Statement":[{
+            "Effect":"Allow",
+            "Action":"cloudformation:DescribeStackResource",
+            "Resource":"*"
+          }]}
+        }]
+      }
+    },
+
+    "HostKeys" : {
+      "Type" : "AWS::IAM::AccessKey",
+      "Properties" : {
+        "UserName" : {"Ref": "CfnUser"}
+      }
+    },
+
+    "SentryWebServer" : {  
+      "Type": "AWS::EC2::Instance",
+      "Metadata" : {
+        "AWS::CloudFormation::Init" : {
+          "config" : {
+            "packages" : {
+              "apt" : { }
+            },
+
+            "sources" : {
+            },
+
+            "files" : {
+              "/home/ubuntu/.sentry/supervisord.conf" : {
+                "content" : { "Fn::Join" : ["", [
+                  "[program:sentry-web]","\n",
+                  "user=www-data\n",
+                  "group=www-data\n",
+                  "directory=/home/ubuntu/sentry","\n",
+                  "command=/home/ubuntu/sentry/env/bin/sentry --config=/home/ubuntu/.sentry/sentry.conf.py start", "\n",
+                  "environment=PATH=\"/home/ubuntu/sentry/env/bin\"", "\n",
+                  "autostart=true", "\n",
+                  "autorestart=true", "\n",
+                  "redirect_stderr=true", "\n"
+                  ]]},
+                "mode"  : "000644",
+                "owner" : "ubuntu",
+                "group" : "ubuntu"
+              },
+
+              "/home/ubuntu/.sentry/sentry.conf.py" : {
+               "content" : { "Fn::Join" : ["", [
+                  "DATABASES = {\n",
+                  "  'default': {\n",
+                  "    'ENGINE': 'django.db.backends.postgresql_psycopg2',\n",
+                  "    'NAME': '", { "Ref" : "DBName" }, "',\n",
+                  "    'USER': '", { "Ref" : "DBUsername" }, "',\n",
+                  "    'PASSWORD': '", { "Ref" : "DBPassword" }, "',\n",
+                  "    'HOST': 'localhost',\n",
+                  "    'PORT': '',\n",
+                  "   }\n",
+                  "}\n",
+                  "SENTRY_WEB_HOST = '0.0.0.0'\n",
+                  "SENTRY_WEB_PORT = 9000\n",
+                  "SENTRY_WEB_OPTIONS = { 'workers': 4, 'worker_class': 'gevent' }"
+                  ]]},
+                "mode"  : "000644",
+                "owner" : "ubuntu",
+                "group" : "ubuntu"
+              }
+            }
+          }
+        }
+      },
+      "Properties": {
+        "ImageId" : { "Fn::FindInMap" : [ "AWSRegionArch2AMI", { "Ref" : "AWS::Region" },
+                          { "Fn::FindInMap" : [ "AWSInstanceType2Arch", { "Ref" : "InstanceType" }, "Arch" ] } ] },
+        "InstanceType"   : { "Ref" : "InstanceType" },
+        "SecurityGroups" : [ {"Ref" : "SentryWebServerGroup"} ],
+        "KeyName"        : { "Ref" : "KeyName" },
+        "UserData"       : { "Fn::Base64" : { "Fn::Join" : ["", [
+          "#!/bin/bash\n",
+
+          "function error_exit\n",
+          "{\n",
+          "  cfn-signal -e 1 -r \"$1\" '", { "Ref"  : "SentryWebServerWaitHandle" }, "'\n",
+          "  exit 1\n",
+          "}\n",
+
+          "function virtual_py\n",
+          "{\n",
+          "  sudo -u ubuntu /home/ubuntu/sentry/env/bin/python $* || error_exit \"Failed to $*\"\n",
+          "}\n",
+
+          "apt-get install -y build-essential python python-dev python-setuptools libevent-dev supervisor nginx postgresql postgresql-server-dev-all\n",
+
+          "easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-1.0-6.tar.gz\n",
+
+          "cfn-init -s ", { "Ref" : "AWS::StackName" }, " -r SentryWebServer ",
+          "    --access-key ",  { "Ref" : "HostKeys" },
+          "    --secret-key ", {"Fn::GetAtt": ["HostKeys", "SecretAccessKey"]},
+          "    --region ", { "Ref" : "AWS::Region" }, " || error_exit 'Failed to run cfn-init'\n",
+
+          "sudo -u postgres createuser -D -S -R ", { "Ref" : "DBUsername" },
+          " || error_exit 'Failed to create pgsql user'\n",
+          "sudo -u postgres createdb -O ", { "Ref" : "DBUsername" },
+          " ", { "Ref" : "DBName" }, " || error_exit 'Failed to create pgsql db'\n",
+          "sudo -u postgres psql -c \"alter user ", { "Ref" : "DBUsername" },
+          " with encrypted password '", { "Ref" : "DBPassword" }, "';\"",
+          " || error_exit 'Failed to setup pgsql password'\n",
+
+          "sudo -u ubuntu mkdir -p /home/ubuntu/sentry\n",
+
+          "easy_install -U virtualenv || error_exit 'Failed to Setup virtualenv'\n",
+          "sudo -u ubuntu virtualenv /home/ubuntu/sentry/env || error_exit 'Failed to init virtualenv'\n",
+
+          "echo -e \"\nSENTRY_KEY = '`openssl rand -hex 8`'\n\" >> /home/ubuntu/.sentry/sentry.conf.py\n",
+
+          "cat /home/ubuntu/.sentry/sentry.conf.py\n",
+
+          "virtual_py /home/ubuntu/sentry/env/bin/pip install psycopg2 gevent sentry >> /home/ubuntu/.pip.log 2>&1\n",
+
+          "virtual_py /home/ubuntu/sentry/env/bin/sentry --config=/home/ubuntu/.sentry/sentry.conf.py upgrade --noinput\n",
+
+          "echo \"from django.contrib.auth.models import User;",
+          "User.objects.create_superuser('", { "Ref" : "SentryUserName" }, "'",
+          ", '", { "Ref" : "SentryEmail" }, "'",
+          ", '", { "Ref" : "SentryPassword" }, "'",
+          ")\"",
+          " | virtual_py /home/ubuntu/sentry/env/bin/sentry --config=/home/ubuntu/.sentry/sentry.conf.py shell\n",
+
+          "virtual_py /home/ubuntu/sentry/env/bin/sentry repair",
+          " --owner=", { "Ref" : "SentryUserName" }, "\n",
+
+          "echo -e \"\n# sentry\n\" >> /etc/supervisor/supervisord.conf\n",
+          "cat /home/ubuntu/.sentry/supervisord.conf >> /etc/supervisor/supervisord.conf\n",
+
+          "supervisorctl update\n",
+
+          "# All is well so signal success\n",
+          "cfn-signal -e 0 -r \"Sentry application setup complete\" '", { "Ref" : "SentryWebServerWaitHandle" }, "'\n"
+        ]]}}        
+      }
+    },
+
+    "SentryWebServerWaitHandle" : {
+      "Type" : "AWS::CloudFormation::WaitConditionHandle"
+    },
+
+    "SentryWebServerWaitCondition" : {
+      "Type" : "AWS::CloudFormation::WaitCondition",
+      "DependsOn" : "SentryWebServer",
+      "Properties" : {
+        "Handle" : {"Ref" : "SentryWebServerWaitHandle"},
+        "Timeout" : "1500"
+      }
+    },
+    
+    "SentryWebServerGroup" : {
+      "Type" : "AWS::EC2::SecurityGroup",
+      "Properties" : {
+        "GroupDescription" : "Enable HTTP access via port 9000",
+        "SecurityGroupIngress" : [
+          {"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : "0.0.0.0/0"},
+          {"IpProtocol" : "tcp", "FromPort" : "9000", "ToPort" : "9000", "CidrIp" : "0.0.0.0/0"}
+        ]
+      }      
+    }          
+  },
+  
+  "Outputs" : {
+    "SentryURL" : {
+      "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "SentryWebServer", "PublicDnsName" ]}, ":9000" ]] },
+      "Description" : "URL for newly created Sentry application"
+    }
+  }
+}
