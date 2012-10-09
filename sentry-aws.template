@@ -14,15 +14,6 @@
       "ConstraintDescription" : "can contain only alphanumeric characters, spaces, dashes and underscores."
     },    
 
-    "SentryKey" : {
-      "Description" : "a unique randomly generated secret key for your server, and it acts as a signing token",
-      "Type" : "String",
-      "MinLength": "1",
-      "MaxLength": "64",
-      "AllowedPattern" : "[a-zA-Z0-9]*",
-      "ConstraintDescription" : "must contain only alphanumeric characters."
-    },
-
     "SentryEmail" : {
       "Description" : "Sentry email",
       "Type": "String",
@@ -188,6 +179,30 @@
                 "mode"  : "000644",
                 "owner" : "ubuntu",
                 "group" : "ubuntu"
+              },
+
+              "/home/ubuntu/.sentry/sentry.nginx.conf" : {
+                "content" : { "Fn::Join" : ["", [
+                  "upstream sentry {\n",
+                  "  server 127.0.0.1:9000 fail_timeout=0;\n",
+                  "}\n\n",
+                  "server {\n",
+                  "  listen 80 default deferred;\n",
+                  "  server_name _;\n\n",
+                  "  access_log /var/log/nginx/sentry.access.log;\n\n",
+                  "  root /home/ubuntu/sentry;\n\n",
+                  "  location / {\n",
+                  "    proxy_set_header X-Real-IP $remote_addr;\n",
+                  "    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n",
+                  "    proxy_set_header Host $http_host;\n\n",
+                  "    proxy_pass http://sentry;\n",
+                  "    proxy_redirect off;\n",
+                  "  }\n",
+                  "}"
+                  ]]},
+                "mode"  : "000644",
+                "owner" : "ubuntu",
+                "group" : "ubuntu"
               }
             }
           }
@@ -258,6 +273,11 @@
 
           "supervisorctl update\n",
 
+          "unlink /etc/nginx/sites-enabled/default\n",
+          "cp /home/ubuntu/.sentry/sentry.nginx.conf /etc/nginx/sites-available/sentry.conf\n",
+          "ln -s /etc/nginx/sites-available/sentry.conf /etc/nginx/sites-enabled/sentry.conf\n",
+          "/etc/init.d/nginx restart\n",
+
           "# All is well so signal success\n",
           "cfn-signal -e 0 -r \"Sentry application setup complete\" '", { "Ref" : "SentryWebServerWaitHandle" }, "'\n"
         ]]}}        
@@ -280,10 +300,10 @@
     "SentryWebServerGroup" : {
       "Type" : "AWS::EC2::SecurityGroup",
       "Properties" : {
-        "GroupDescription" : "Enable HTTP access via port 9000",
+        "GroupDescription" : "Enable HTTP access via port 80",
         "SecurityGroupIngress" : [
           {"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : "0.0.0.0/0"},
-          {"IpProtocol" : "tcp", "FromPort" : "9000", "ToPort" : "9000", "CidrIp" : "0.0.0.0/0"}
+          {"IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0"}
         ]
       }      
     }          
@@ -291,7 +311,7 @@
   
   "Outputs" : {
     "SentryURL" : {
-      "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "SentryWebServer", "PublicDnsName" ]}, ":9000" ]] },
+      "Value" : { "Fn::Join" : ["", ["http://", { "Fn::GetAtt" : [ "SentryWebServer", "PublicDnsName" ]} ]] },
       "Description" : "URL for newly created Sentry application"
     }
   }
